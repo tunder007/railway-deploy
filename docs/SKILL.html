@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Railway deploy — skill (human operator guide)</title>
+<style>
+  :root{--bg:#0b0f14;--panel:#121821;--line:#243140;--ink:#e6edf3;--muted:#9fb0c0;--faint:#6f8298;--blue:#58a6ff;--violet:#a371f7;--green:#3fb950;--amber:#d29922}
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b0f14,#0d131b);color:var(--ink);font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 22px 80px}
+  a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+  code{background:#0e141c;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cdd9e5}
+  pre{background:#0e141c;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;font:12.5px/1.5 ui-monospace,Menlo,monospace;color:#cdd9e5}
+  h1{font-size:29px;margin:0 0 6px;letter-spacing:-.5px}h2{font-size:20px;margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}h3{font-size:16px;margin:22px 0 8px;color:#cdd9e5}
+  p{margin:10px 0}.sub{color:var(--muted);font-size:14px}.meta{color:var(--faint);font-size:13px;margin-top:8px}
+  .note{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--violet);border-radius:10px;padding:13px 16px;margin:16px 0;font-size:14px}
+  .prob{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:10px;padding:13px 16px;margin:16px 0;font-size:14px;color:var(--muted)}
+  .pills span{display:inline-block;font-size:12px;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:3px 11px;margin:3px 5px 3px 0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}tbody tr:hover{background:rgba(88,166,255,.04)}td.c{text-align:center}
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin:16px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;border-left:3px solid var(--blue)}
+  .card.w{border-left-color:var(--violet)}
+  .card h4{margin:0 0 4px;font-size:15px;display:flex;gap:8px;align-items:center}.card .n{font-size:11px;color:var(--faint);font-weight:700;background:#0e141c;border:1px solid var(--line);border-radius:6px;padding:1px 7px}
+  .card .w-tag{font-size:10px;color:#d2a8ff;border:1px solid rgba(163,113,247,.4);border-radius:5px;padding:1px 6px}.card p{margin:6px 0 0;font-size:13px;color:var(--muted)}
+  ul.clean{list-style:none;padding:0;margin:10px 0}ul.clean li{padding:6px 0 6px 24px;position:relative;border-bottom:1px solid rgba(36,49,64,.5);font-size:14px}ul.clean li:last-child{border-bottom:0}
+  li.ok::before{content:"✓";position:absolute;left:0;color:var(--green);font-weight:700}li.dot::before{content:"◆";position:absolute;left:0;color:var(--blue);font-size:9px;top:11px}
+  .foot{color:var(--faint);font-size:13px;border-top:1px solid var(--line);margin-top:42px;padding-top:16px}
+  @media(max-width:740px){.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Railway deploy</h1>
+  <div class="sub">Human operator guide. Deterministic deploy of a backend (+ managed DB) to <b>Railway</b> via the
+  <code>railway</code> CLI, with strict env handling and <b>secret hygiene</b>. By default it produces a reviewable
+  <b>plan</b> (preflight · env-key diff · plaintext-secret scan · migrations · the exact deploy command) and executes
+  nothing; with <code>--deploy</code> it runs that plan safely and verifies <code>/health</code>.</div>
+  <div class="meta">Status: built (self-test passing) · Targets: Claude Code · Codex · Cursor</div>
+
+  <div class="note"><b>About these two files.</b> <code>README.md</code> is the AI-optimized source of truth;
+  this <code>README.html</code> is the human view generated from it. Convention: <b>.md = AI optimization,
+  .html = human view.</b></div>
+
+  <h2>The problem it solves</h2>
+  <div class="prob">The backend runs on Railway with MySQL; env wiring is fiddly and secret-sensitive. Deploys need to
+  be <b>repeatable</b> and to keep credentials <b>out of logs and out of git</b>. The motivating incident: a <b>live
+  Railway DB password was committed in plaintext</b> to <code>.claude/settings.local.json</code>. This skill makes
+  deploys reproducible and actively <b>scans for that exact class of leak</b> — masking any value it finds and
+  recommending rotation.</div>
+
+  <h2>What it does — 5 functionalities</h2>
+  <p class="sub">01–04 are read-only and build the plan; 05 runs only on a real deploy, behind the deployability and
+  secret gates. Each has its own doc under <code>functionalities/</code>.</p>
+  <div class="cards">
+    <div class="card"><h4><span class="n">01</span> Preflight</h4><p>Read-only checks: <code>railway</code> on PATH? project linked? <code>.env.example</code> present? <code>.env*</code> gitignored?</p></div>
+    <div class="card"><h4><span class="n">02</span> Env diff (keys only)</h4><p>Diffs required keys in <code>.env.example</code> against <code>.env</code> + <code>process.env</code> — values never read.</p></div>
+    <div class="card"><h4><span class="n">03</span> Secret-hygiene scan <span class="w-tag">highlight</span></h4><p>Finds plaintext DB passwords, tokens &amp; credentialed connection strings — and <b>masks the value</b>.</p></div>
+    <div class="card"><h4><span class="n">04</span> Plan &amp; command</h4><p>Assembles the checks and prints the exact <code>railway up --detach</code> command. Executes nothing.</p></div>
+    <div class="card w"><h4><span class="n">05</span> Migrations &amp; health verify <span class="w-tag">gated</span></h4><p>On <code>--deploy</code>: <code>railway up</code> → idempotent migrations → <code>/health</code> 200 check.</p></div>
+  </div>
+
+  <h2>Expected input</h2>
+  <table>
+    <thead><tr><th>Input</th><th>Required</th><th>Default</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>&lt;backend-dir&gt;</code></td><td>yes</td><td><code>.</code></td><td>The backend to deploy (e.g. <code>lumen-code/backend</code>).</td></tr>
+      <tr><td><code>--deploy</code></td><td>no</td><td>off (dry-run)</td><td>Required to actually deploy; otherwise prints the plan only.</td></tr>
+      <tr><td><code>--no-detach</code></td><td>no</td><td>off</td><td>Stream build logs (<code>railway up</code> without <code>--detach</code>).</td></tr>
+      <tr><td><code>--json</code></td><td>no</td><td>off</td><td>Emit the machine-readable plan as JSON (always dry-run).</td></tr>
+    </tbody>
+  </table>
+  <div class="pills"><b style="font-size:13px;color:var(--muted)">Invoke:</b>
+    <span>Claude: <code>/railway-deploy &lt;dir&gt;</code></span>
+    <span>Codex: AGENTS.md → <code>scripts/deploy.mjs</code></span>
+    <span>Cursor: <code>railway-deploy.mdc</code></span></div>
+  <p class="sub"><b>Default is read-only (dry-run).</b> Nothing is deployed unless <code>--deploy</code> is passed.</p>
+
+  <h2>Expected structure of projects it works in</h2>
+  <p class="sub">Targets an Express + Sequelize + MySQL backend on Railway (the <code>lumen-code/backend</code> pattern);
+  the read-only checks run on any backend dir.</p>
+  <table>
+    <thead><tr><th>Signal</th><th>Looks like</th><th>How it's used</th></tr></thead>
+    <tbody>
+      <tr><td>Required env contract</td><td><code>.env.example</code> with keys</td><td>diffed against <code>.env</code> + <code>process.env</code> (keys only)</td></tr>
+      <tr><td>Secret hygiene</td><td><code>.gitignore</code>, <code>settings*.json</code>, configs, <code>.env*</code></td><td><code>.env*</code> ignored? · scanned for plaintext secrets</td></tr>
+      <tr><td>Migrations</td><td><code>scripts.db:migrate</code> / <code>migrations/</code></td><td>idempotent <code>railway run</code> command derived</td></tr>
+      <tr><td>Health</td><td><code>GET /health</code> → <code>200 {"ok":true}</code></td><td>post-deploy verification (real deploy only)</td></tr>
+      <tr><td>Railway config</td><td><code>railway.json</code> (NIXPACKS)</td><td>the build/start contract the deploy relies on</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Secret hygiene — the highlight</h2>
+  <ul class="clean">
+    <li class="ok"><b>Scans</b> for DB passwords, tokens, and credentialed connection strings in JSON and dotenv forms.</li>
+    <li class="ok"><b>Skips placeholders</b> (empty, <code>${VAR}</code>, <code>&lt;...&gt;</code>, <code>your_*</code>, <code>changeme</code>…) to avoid noise.</li>
+    <li class="ok"><b>Never prints a value</b> — masked as first 2 chars + a fixed-length tail, so neither value nor length leaks.</li>
+    <li class="ok"><b>Reproduces the real finding:</b> <code>.claude/settings.local.json</code> → <code>db-password</code>; recommends rotation; confirms <code>.env*</code> gitignored.</li>
+    <li class="ok"><b>A real deploy refuses</b> to proceed while any secret is found.</li>
+  </ul>
+
+  <h2>Safety &amp; determinism guarantees</h2>
+  <ul class="clean">
+    <li class="ok"><b>Dry-run by default</b> — no deploy without <code>--deploy</code>; the plan shows the exact command first.</li>
+    <li class="ok"><b>Secret values never printed</b> — masked at capture; absent from plans, JSON, and logs.</li>
+    <li class="ok"><b>Deploy gate</b> — refuses to run while preflight fails, env keys are missing, or any secret is found.</li>
+    <li class="ok"><b>Idempotent migrations</b> (Sequelize <code>SequelizeMeta</code>); safe to re-run.</li>
+    <li class="ok"><b>Deterministic</b> — no randomness/clock in the core; pure core in <code>scripts/lib/run.mjs</code>.</li>
+    <li class="ok"><b>Offline self-test</b> — never runs <code>railway up</code>/<code>railway run</code> or any mutating command; no network, no real secrets.</li>
+  </ul>
+
+  <h2>Build status &amp; how to run</h2>
+  <ul class="clean">
+    <li class="ok">This spec + 5 functionality docs + this human guide.</li>
+    <li class="ok"><b>Implementation:</b> <code>scripts/</code> — zero-dependency Node. Pure core <code>lib/run.mjs</code> (<code>planDeploy</code> / <code>secretHygieneScan</code> / <code>envDiff</code> / <code>detectMigrations</code>), helpers <code>lib/util.mjs</code> (incl. <code>maskSecret</code>), thin CLI <code>deploy.mjs</code> (dry-run default · <code>--deploy</code> · <code>--json</code>).</li>
+    <li class="ok"><b>Cross-tool shells:</b> Claude <code>.claude/skills/railway-deploy/SKILL.md</code> and Cursor <code>.cursor/rules/railway-deploy.mdc</code> — both wrap <code>deploy.mjs</code>.</li>
+    <li class="ok"><b>Self-test:</b> <code>node scripts/self-test.mjs</code> builds a throwaway fixture in <code>/tmp/railway-deploy-selftest</code> and asserts env-diff lists missing keys, the secret scan flags + masks a planted secret (and is clean when none present), the command is correct, and dry-run executes nothing — with no real railway calls. <b>PASSED.</b> Sample under <code>example-output/</code>.</li>
+  </ul>
+  <h3>How to run</h3>
+  <pre>node tasks/skill-railway-deploy/scripts/deploy.mjs lumen-code/backend            # plan (dry-run)
+node tasks/skill-railway-deploy/scripts/deploy.mjs lumen-code/backend --json     # plan as JSON
+node tasks/skill-railway-deploy/scripts/deploy.mjs lumen-code/backend --deploy   # real deploy (gated)
+node tasks/skill-railway-deploy/scripts/self-test.mjs                            # offline gate</pre>
+
+  <div class="foot">Source of truth: <code>README.md</code> (this is the generated human view). Functionality details:
+  <code>functionalities/01…05.md</code>. Task: <code>../05-skill-railway-deploy.md</code>. Reference service:
+  <code>../../lumen-code/backend/</code> (read-only).</div>
+
+</div>
+</body>
+</html>

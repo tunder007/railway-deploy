@@ -1,0 +1,40 @@
+{
+  "name": "@softeneers/railway-deploy",
+  "version": "1.0.0",
+  "description": "Deterministic, dry-run-by-default Railway deploys (backend + managed DB) with strict env-key diffing and a plaintext-secret scanner.",
+  "type": "module",
+  "bin": {
+    "railway-deploy": "./scripts/deploy.mjs"
+  },
+  "scripts": {
+    "test": "node scripts/self-test.mjs",
+    "self-test": "node scripts/self-test.mjs"
+  },
+  "files": [
+    "scripts"
+  ],
+  "keywords": [
+    "railway",
+    "deploy",
+    "backend",
+    "database",
+    "env",
+    "secrets"
+  ],
+  "author": "Softeneers <damian.tudor03@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tunder007/railway-deploy.git"
+  },
+  "homepage": "https://github.com/tunder007/railway-deploy#readme",
+  "bugs": {
+    "url": "https://github.com/tunder007/railway-deploy/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,39 @@
+$ node tasks/skill-railway-deploy/scripts/deploy.mjs lumen-code/backend
+
+Railway deploy — plan for /…/lumen-hackathon/lumen-code/backend
+mode: DRY-RUN (read-only)
+
+Preflight
+  ✓ railway CLI on PATH
+  ✗ project linked
+  ✓ .env.example present
+  ✓ .env* gitignored
+    · project not linked — run `railway link` (or `railway init`) first.
+
+Env diff (keys only — values never read)
+  ✗ missing 7 key(s): DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER, FRONTEND_URL, PORT
+
+Secret-hygiene scan  ⚠
+  ⚠ 1 plaintext secret(s) found (values masked):
+    .claude/settings.local.json:40  [db-password]  value=Hk••••••••
+  → ROTATE these credentials and ensure the file is not committed (gitignore .env*; do not commit settings.local.json secrets).
+
+Migrations
+  command (idempotent): railway run npm run db:migrate
+  · Sequelize tracks applied migrations in SequelizeMeta; re-running skips already-applied ones (safe to re-run).
+
+Deploy command it WOULD run:
+  railway up --detach
+Post-deploy check: GET <service-url>/health expects 200 {"ok":true}
+
+(dry-run — nothing executed. Re-run with --deploy to deploy for real.)
+
+# ── NOTES ────────────────────────────────────────────────────────────────────
+# • This is a REAL finding from this repo: a live Railway DB password was committed
+#   in plaintext to .claude/settings.local.json. The scanner flags it and masks the
+#   value (only the first 2 chars + a fixed-length tail — never the real length).
+#   Recommended action: ROTATE the DB password on Railway, then remove it from the
+#   file. The value here (Hk••••••••) is illustrative — the tool never prints the real one.
+# • Preflight shows "project not linked" because no `railway link` has been run in this
+#   dir. With --deploy, the tool would REFUSE to proceed (missing env keys + not linked),
+#   so a real deploy never runs from an unsafe state.
